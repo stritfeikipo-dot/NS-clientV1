@@ -609,3 +609,304 @@ public class ClickGui extends Screen {
         }
         return false;
     }
+        private boolean handleSidebarClick(double mouseX, double mouseY) {
+        if (mouseX < 10 || mouseX > 10 + SIDEBAR_W) return false;
+        int y = CONTENT_Y + 10;
+        for (NavItem item : NAV_MODULES) {
+            if (isInside(mouseX, mouseY, 10, y, SIDEBAR_W, NAV_ROW_H)) return selectSection(item.section());
+            y += NAV_ROW_H + 2;
+        }
+        y += 8 + 14;
+        for (NavItem item : NAV_GENERAL) {
+            if (isInside(mouseX, mouseY, 10, y, SIDEBAR_W, NAV_ROW_H)) return selectSection(item.section());
+            y += NAV_ROW_H + 2;
+        }
+        return false;
+    }
+
+    private boolean selectSection(Section newSection) {
+        section = newSection;
+        expanded = null;
+        bindingModule = null;
+        if (newSection != Section.HUD_EDIT) selectedGroup = null;
+        if (newSection == Section.CONFIGS) profileCacheDirty = true;
+        return true;
+    }
+
+    private boolean handleModulesClick(double mouseX, double mouseY) {
+        int y = CONTENT_Y + 8;
+        if (section == Section.VISUALS) {
+            int tabW = 90, gap = 8, startX = PANEL_X + 10;
+            Module.Area[] areas = { Module.Area.PLAYER, Module.Area.WORLD };
+            for (int i = 0; i < areas.length; i++) {
+                if (isInside(mouseX, mouseY, startX + i * (tabW + gap), y, tabW, 16)) {
+                    selectedArea = areas[i];
+                    expanded = null;
+                    return true;
+                }
+            }
+            y += 16 + 10;
+        }
+
+        for (Module m : getVisibleModules()) {
+            int toggleX = PANEL_X + PANEL_W - 40;
+            if (isInside(mouseX, mouseY, toggleX, y + 8, 28, 14)) {
+                m.toggle();
+                return true;
+            }
+            if (isInside(mouseX, mouseY, PANEL_X + 6, y, PANEL_W - 12, MODULE_ROW_H)) {
+                expanded = (expanded == m) ? null : m;
+                return true;
+            }
+            y += MODULE_ROW_H + 2;
+            if (expanded == m) {
+                for (Setting<?> setting : m.getSettings()) {
+                    if (setting instanceof SliderSetting slider) {
+                        int barY = y + 11;
+                        if (mouseY >= barY && mouseY <= barY + 4) {
+                            draggingSlider = slider;
+                            updateSlider(slider, mouseX);
+                            return true;
+                        }
+                        y += SETTING_SLIDER_H;
+                    } else if (setting instanceof BooleanSetting bool) {
+                        int toggleX2 = PANEL_X + PANEL_W - 40;
+                        if (isInside(mouseX, mouseY, toggleX2, y, 28, 12)) {
+                            bool.setValue(!bool.getValue());
+                            return true;
+                        }
+                        y += SETTING_BOOL_H;
+                    } else {
+                        y += SETTING_COLOR_H;
+                    }
+                }
+                String modeLabel = modeRowLabel(m);
+                if (modeLabel != null) {
+                    if (isInside(mouseX, mouseY, PANEL_X + 6, y, PANEL_W - 12, SETTING_BOOL_H)) {
+                        cycleMode(m);
+                        return true;
+                    }
+                    y += SETTING_BOOL_H;
+                }
+                y += 6;
+            }
+        }
+        return false;
+    }
+
+    private boolean handleThemesClick(double mouseX, double mouseY) {
+        int size = 22, gap = 8, startX = PANEL_X + 14, rowY = CONTENT_Y + 38;
+        for (int i = 0; i < THEME_SWATCHES.length; i++) {
+            int x = startX + i * (size + gap);
+            if (isInside(mouseX, mouseY, x, rowY, size, size)) {
+                applyTheme(THEME_SWATCHES[i] | 0xFF000000);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean handleKeybindsClick(double mouseX, double mouseY) {
+        int y = CONTENT_Y + 8;
+        for (Module m : NSClientClient.MODULES.getModules()) {
+            if (isInside(mouseX, mouseY, PANEL_X + 6, y, PANEL_W - 12, NAV_ROW_H)) {
+                bindingModule = m;
+                return true;
+            }
+            y += NAV_ROW_H + 2;
+        }
+        return false;
+    }
+
+    private boolean handleConfigsClick(double mouseX, double mouseY) {
+        int fieldY = CONTENT_Y + 26;
+        int fieldW = PANEL_W - 14 - 60 - 14;
+        if (isInside(mouseX, mouseY, PANEL_X + 14, fieldY, fieldW, 16)) {
+            configNameFocused = true;
+            return true;
+        }
+        int saveX = PANEL_X + 14 + fieldW + 8;
+        if (isInside(mouseX, mouseY, saveX, fieldY, 52, 16)) {
+            String trimmed = configNameBuffer.trim();
+            if (!trimmed.isEmpty()) {
+                ConfigManager.saveProfile(NSClientClient.MODULES, trimmed);
+                configNameBuffer = "";
+                profileCacheDirty = true;
+            }
+            return true;
+        }
+
+        int y = fieldY + 26;
+        for (String name : profileCache) {
+            if (isInside(mouseX, mouseY, PANEL_X + PANEL_W - 100, y, 40, NAV_ROW_H)) {
+                ConfigManager.loadProfile(NSClientClient.MODULES, name);
+                return true;
+            }
+            if (isInside(mouseX, mouseY, PANEL_X + PANEL_W - 54, y, 40, NAV_ROW_H)) {
+                ConfigManager.deleteProfile(name);
+                profileCacheDirty = true;
+                return true;
+            }
+            y += NAV_ROW_H + 2;
+        }
+        return false;
+    }
+
+    private boolean handleHudDragStart(double mouseX, double mouseY, int button) {
+        if (mouseX <= PANEL_X + PANEL_W + 10) return false;
+        HudGroupManager gm = NSClientClient.MODULES.getGroupManager();
+
+        if (button == 1) {
+            for (HudGroup g : gm.getGroups()) {
+                for (HudGroup.MemberBounds b : g.getLastBounds()) {
+                    if (mouseX >= b.x1() && mouseX <= b.x2() && mouseY >= b.y1() && mouseY <= b.y2()) {
+                        gm.splitOut(NSClientClient.MODULES, b.moduleName());
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        for (HudGroup g : gm.getGroups()) {
+            if (g.containsPoint(mouseX, mouseY)) {
+                draggingGroup = g;
+                selectedGroup = g;
+                groupDragOffsetX = mouseX - g.getX();
+                groupDragOffsetY = mouseY - g.getY();
+                return true;
+            }
+        }
+
+        for (Module mod : NSClientClient.MODULES.getModules()) {
+            if (mod instanceof HudModule hud && hud.isEnabled() && !hud.isGrouped()
+                    && isInside(mouseX, mouseY, hud.getX(), hud.getY(), hud.getPreviewWidth(), hud.getPreviewHeight())) {
+                draggingHud = hud;
+                dragOffsetX = mouseX - hud.getX();
+                dragOffsetY = mouseY - hud.getY();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void tryMergeOnRelease(HudModule dragged) {
+        if (!(dragged instanceof TextStat)) return;
+        HudGroupManager gm = NSClientClient.MODULES.getGroupManager();
+        double dcx = dragged.getX() + dragged.getPreviewWidth() / 2.0;
+        double dcy = dragged.getY() + dragged.getPreviewHeight() / 2.0;
+
+        for (HudGroup g : gm.getGroups()) {
+            if (g.containsPoint(dcx, dcy) && !g.getMembers().contains(dragged.getName())) {
+                gm.merge(NSClientClient.MODULES, dragged.getName(), g.getMembers().get(0));
+                return;
+            }
+        }
+        for (Module mod : NSClientClient.MODULES.getModules()) {
+            if (!(mod instanceof HudModule other) || mod == dragged || !(other instanceof TextStat)) continue;
+            if (!other.isEnabled() || other.isGrouped()) continue;
+            boolean hit = dcx >= other.getX() && dcx <= other.getX() + other.getPreviewWidth()
+                    && dcy >= other.getY() && dcy <= other.getY() + other.getPreviewHeight();
+            if (hit) {
+                gm.merge(NSClientClient.MODULES, dragged.getName(), other.getName());
+                return;
+            }
+        }
+    }
+
+    private void updateSlider(SliderSetting slider, double mouseX) {
+        int barX = PANEL_X + 14;
+        int barW = PANEL_W - 40;
+        double pct = clamp01((mouseX - barX) / (double) barW);
+        double raw = slider.getMin() + pct * (slider.getMax() - slider.getMin());
+        double stepped = Math.round(raw / slider.getStep()) * slider.getStep();
+        slider.setValue(Math.max(slider.getMin(), Math.min(slider.getMax(), stepped)));
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (draggingSlider != null) {
+            updateSlider(draggingSlider, mouseX);
+            return true;
+        }
+        if (draggingHud != null) {
+            draggingHud.setX(mouseX - dragOffsetX);
+            draggingHud.setY(mouseY - dragOffsetY);
+            return true;
+        }
+        if (draggingGroup != null) {
+            draggingGroup.setX(mouseX - groupDragOffsetX);
+            draggingGroup.setY(mouseY - groupDragOffsetY);
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (draggingHud != null) tryMergeOnRelease(draggingHud);
+        draggingSlider = null;
+        draggingHud = null;
+        draggingGroup = null;
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (mouseX > PANEL_X + PANEL_W + 10) {
+            double delta = verticalAmount > 0 ? 0.05 : -0.05;
+            for (HudGroup g : NSClientClient.MODULES.getGroupManager().getGroups()) {
+                if (g.containsPoint(mouseX, mouseY)) {
+                    g.setScale(g.getScale() + delta);
+                    return true;
+                }
+            }
+            for (Module mod : NSClientClient.MODULES.getModules()) {
+                if (mod instanceof HudModule hud && hud.isEnabled() && !hud.isGrouped()
+                        && isInside(mouseX, mouseY, hud.getX(), hud.getY(), hud.getPreviewWidth(), hud.getPreviewHeight())) {
+                    hud.setScale(hud.getScale() + delta);
+                    return true;
+                }
+            }
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean charTyped(char chr, int modifiers) {
+        if (bindingModule != null) return super.charTyped(chr, modifiers);
+        if (searchFocused) { search += chr; return true; }
+        if (configNameFocused) { configNameBuffer += chr; return true; }
+        return super.charTyped(chr, modifiers);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (bindingModule != null) {
+            bindingModule.setKeyCode(keyCode == GLFW.GLFW_KEY_ESCAPE ? -1 : keyCode);
+            bindingModule = null;
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            if (searchFocused && !search.isEmpty()) { search = search.substring(0, search.length() - 1); return true; }
+            if (configNameFocused && !configNameBuffer.isEmpty()) { configNameBuffer = configNameBuffer.substring(0, configNameBuffer.length() - 1); return true; }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private static boolean isInside(double px, double py, double x, double y, double w, double h) {
+        return px >= x && px <= x + w && py >= y && py <= y + h;
+    }
+
+    private static double clamp01(double v) { return Math.max(0, Math.min(1, v)); }
+    private static float clamp01(float v) { return Math.max(0f, Math.min(1f, v)); }
+
+    @Override
+    public boolean shouldPause() { return false; }
+
+    @Override
+    public void close() {
+        ConfigManager.save(NSClientClient.MODULES);
+        super.close();
+    }
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "nsclient",
+  "version": "${version}",
+  "name": "NS Client",
+  "description": "A client-side PvP visuals mod for Holyworld (HUD, target HUD, hitmarkers, combo counter, custom crosshair, kill effects, ClickGUI). No combat automation.",
+  "authors": [
+    "NS Client"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/nsclient/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.nsclient.NSClientClient"
+    ]
+  },
+  "mixins": [
+    "nsclient.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.1",
+    "fabric-api": "*",
+    "minecraft": "1.21.11",
+    "java": ">=21"
+  }
+}

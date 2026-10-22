@@ -1,4 +1,331 @@
-package com.nsclient.gui;
+    private int renderModuleSettings(DrawContext context, Module m, int y, float revealT, float globalAlpha) {
+        float alpha = revealT * globalAlpha;
+        int slideY = (int) ((1 - revealT) * -6);
+
+        context.fill(PANEL_X + 10, y + slideY, PANEL_X + PANEL_W - 10, y + 2 + slideY, withAlpha(COL_ACCENT_DIM, alpha));
+        y += 6;
+
+        for (Setting<?> setting : m.getSettings()) {
+            if (setting instanceof SliderSetting slider) {
+                context.drawTextWithShadow(this.textRenderer,
+                        slider.getName() + ": " + String.format("%.2f", slider.getValue()),
+                        PANEL_X + 14, y + slideY, withAlpha(COL_TEXT_DIM, alpha));
+                y += 11;
+                int barX = PANEL_X + 14;
+                int barW = PANEL_W - 40;
+                UIRenderUtil.fillRounded(context, barX, y + slideY, barX + barW, y + 4 + slideY, 2, withAlpha(COL_PANEL_ALT, alpha));
+                double pct = (slider.getValue() - slider.getMin()) / (slider.getMax() - slider.getMin());
+                int fillW = (int) (barW * clamp01(pct));
+                if (fillW > 0) {
+                    UIRenderUtil.fillRounded(context, barX, y + slideY, barX + fillW, y + 4 + slideY, 2, withAlpha(COL_ACCENT, alpha));
+                }
+                y += 10;
+            } else if (setting instanceof ColorSetting color) {
+                context.drawTextWithShadow(this.textRenderer, color.getName(), PANEL_X + 14, y + slideY, withAlpha(COL_TEXT_DIM, alpha));
+                UIRenderUtil.fillRounded(context, PANEL_X + PANEL_W - 34, y - 2 + slideY, PANEL_X + PANEL_W - 14, y + 10 + slideY, 3,
+                        withAlpha(color.getValue() | 0xFF000000, alpha));
+                y += SETTING_COLOR_H;
+            } else if (setting instanceof BooleanSetting bool) {
+                float boolT = anim.animate("bool_" + m.getName() + "_" + bool.getName(), bool.getValue() ? 1f : 0f, 16f);
+                drawToggle(context, PANEL_X + PANEL_W - 40, y + slideY, boolT, alpha);
+                context.drawTextWithShadow(this.textRenderer, bool.getName(), PANEL_X + 14, y + 2 + slideY, withAlpha(COL_TEXT_DIM, alpha));
+                y += SETTING_BOOL_H;
+            }
+        }
+
+        String modeLabel = modeRowLabel(m);
+        if (modeLabel != null) {
+            context.drawTextWithShadow(this.textRenderer, modeLabel + "  >", PANEL_X + 14, y + slideY, withAlpha(COL_ACCENT, alpha));
+            y += SETTING_BOOL_H;
+        }
+
+        return y + 6;
+    }
+
+    private static String modeRowLabel(Module m) {
+        if (m instanceof CrosshairModule ch) return "Shape: " + ch.getShape().name();
+        if (m instanceof HitmarkerModule hm) return "Style: " + hm.getStyle().name();
+        if (m instanceof KillEffectsModule ke) return "Style: " + ke.getStyle().name();
+        return null;
+    }
+
+    private static void cycleMode(Module m) {
+        if (m instanceof CrosshairModule ch) ch.cycleShape();
+        else if (m instanceof HitmarkerModule hm) hm.cycleStyle();
+        else if (m instanceof KillEffectsModule ke) ke.cycleStyle();
+    }
+
+    // ---------------------------------------------------------------- themes section
+
+    private void renderThemesSection(DrawContext context, int mouseX, int mouseY, float t) {
+        UIRenderUtil.fillGlass(context, PANEL_X, CONTENT_Y, PANEL_X + PANEL_W, this.height - 10, CARD_RADIUS, withAlpha(COL_PANEL, t));
+        context.drawTextWithShadow(this.textRenderer, "Accent Theme", PANEL_X + 14, CONTENT_Y + 10, withAlpha(COL_TEXT, t));
+        context.drawTextWithShadow(this.textRenderer, "Applies to every module's color setting", PANEL_X + 14, CONTENT_Y + 22, withAlpha(COL_TEXT_DIM, t));
+
+        int size = 22;
+        int gap = 8;
+        int startX = PANEL_X + 14;
+        int rowY = CONTENT_Y + 38;
+        for (int i = 0; i < THEME_SWATCHES.length; i++) {
+            int x = startX + i * (size + gap);
+            boolean hovered = isInside(mouseX, mouseY, x, rowY, size, size);
+            float hoverT = anim.animate("swatch_hover_" + i, hovered ? 1f : 0f, 16f);
+            int ringPad = (int) (hoverT * 3);
+            if (ringPad > 0) {
+                UIRenderUtil.fillRounded(context, x - ringPad, rowY - ringPad, x + size + ringPad, rowY + size + ringPad, 6, withAlpha(COL_ACCENT_DIM, t));
+            }
+            UIRenderUtil.fillRounded(context, x, rowY, x + size, rowY + size, 5, withAlpha(THEME_SWATCHES[i] | 0xFF000000, t));
+        }
+    }
+
+    private void applyTheme(int rgbOpaque) {
+        for (Module m : NSClientClient.MODULES.getModules()) {
+            for (Setting<?> setting : m.getSettings()) {
+                if (setting instanceof ColorSetting color) {
+                    color.setValue(rgbOpaque);
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- HUD editor section
+
+    private void renderHudEditSection(DrawContext context, int mouseX, int mouseY, float t) {
+        int cardBottom = CONTENT_Y + 46;
+        if (selectedGroup != null) cardBottom += selectedGroup.isUseGroupColor() ? 72 : 48;
+
+        UIRenderUtil.fillGlass(context, PANEL_X, CONTENT_Y, PANEL_X + PANEL_W, cardBottom, CARD_RADIUS, withAlpha(COL_PANEL, t));
+        context.drawTextWithShadow(this.textRenderer, "HUD Editor", PANEL_X + 14, CONTENT_Y + 10, withAlpha(COL_TEXT, t));
+        context.drawTextWithShadow(this.textRenderer, "Drag an element onto another to merge them.", PANEL_X + 14, CONTENT_Y + 22, withAlpha(COL_TEXT_DIM, t));
+        context.drawTextWithShadow(this.textRenderer, "Right-click a merged one to pull it back out.", PANEL_X + 14, CONTENT_Y + 33, withAlpha(COL_TEXT_DIM, t));
+
+        if (selectedGroup == null) return;
+        int y = CONTENT_Y + 50;
+        context.drawTextWithShadow(this.textRenderer, "Selected group", PANEL_X + 14, y, withAlpha(COL_TEXT, t));
+        y += 14;
+
+        boolean use = selectedGroup.isUseGroupColor();
+        boolean toggleHovered = isInside(mouseX, mouseY, PANEL_X + PANEL_W - 40, y, 28, 14);
+        drawToggle(context, PANEL_X + PANEL_W - 40, y, use ? 1f : (toggleHovered ? 0.15f : 0f), t);
+        context.drawTextWithShadow(this.textRenderer, "Shared color for whole pill", PANEL_X + 14, y + 3, withAlpha(COL_TEXT_DIM, t));
+        y += 20;
+
+        if (use) {
+            int size = 16, gap = 6, startX = PANEL_X + 14;
+            for (int i = 0; i < THEME_SWATCHES.length; i++) {
+                int x = startX + i * (size + gap);
+                boolean isCurrent = (THEME_SWATCHES[i] | 0xFF000000) == selectedGroup.getGroupColor();
+                if (isCurrent) UIRenderUtil.fillRounded(context, x - 2, y - 2, x + size + 2, y + size + 2, 5, withAlpha(COL_ACCENT, t));
+                UIRenderUtil.fillRounded(context, x, y, x + size, y + size, 4, withAlpha(THEME_SWATCHES[i] | 0xFF000000, t));
+            }
+            y += size + 10;
+        }
+
+        context.drawTextWithShadow(this.textRenderer, "Ungroup all", PANEL_X + 14, y, withAlpha(0xFFFF6B6B, t));
+    }
+
+    private boolean handleHudEditClick(double mouseX, double mouseY) {
+        if (selectedGroup == null) return false;
+        int y = CONTENT_Y + 50 + 14;
+        if (isInside(mouseX, mouseY, PANEL_X + PANEL_W - 40, y, 28, 14)) {
+            selectedGroup.setUseGroupColor(!selectedGroup.isUseGroupColor());
+            return true;
+        }
+        y += 20;
+        if (selectedGroup.isUseGroupColor()) {
+            int size = 16, gap = 6, startX = PANEL_X + 14;
+            for (int i = 0; i < THEME_SWATCHES.length; i++) {
+                int x = startX + i * (size + gap);
+                if (isInside(mouseX, mouseY, x, y, size, size)) {
+                    selectedGroup.setGroupColor(THEME_SWATCHES[i] | 0xFF000000);
+                    return true;
+                }
+            }
+            y += size + 10;
+        }
+        int ungroupW = this.textRenderer.getWidth("Ungroup all") + 4;
+        if (isInside(mouseX, mouseY, PANEL_X + 14, y, ungroupW, 10)) {
+            HudGroupManager gm = NSClientClient.MODULES.getGroupManager();
+            for (String name : new ArrayList<>(selectedGroup.getMembers())) {
+                gm.splitOut(NSClientClient.MODULES, name);
+            }
+            selectedGroup = null;
+            return true;
+        }
+        return false;
+    }
+
+    // ---------------------------------------------------------------- socials section
+
+    private void renderSocialsSection(DrawContext context, float t) {
+        UIRenderUtil.fillGlass(context, PANEL_X, CONTENT_Y, PANEL_X + PANEL_W, this.height - 10, CARD_RADIUS, withAlpha(COL_PANEL, t));
+        context.drawTextWithShadow(this.textRenderer, "Community", PANEL_X + 14, CONTENT_Y + 10, withAlpha(COL_TEXT, t));
+        context.drawTextWithShadow(this.textRenderer, "Discord: " + SOCIAL_DISCORD, PANEL_X + 14, CONTENT_Y + 26, withAlpha(COL_TEXT_DIM, t));
+        context.drawTextWithShadow(this.textRenderer, "GitHub: " + SOCIAL_GITHUB, PANEL_X + 14, CONTENT_Y + 38, withAlpha(COL_TEXT_DIM, t));
+    }
+
+    // ---------------------------------------------------------------- keybinds section
+
+    private void renderKeybindsSection(DrawContext context, int mouseX, int mouseY, float t) {
+        UIRenderUtil.fillGlass(context, PANEL_X, CONTENT_Y, PANEL_X + PANEL_W, this.height - 10, CARD_RADIUS, withAlpha(COL_PANEL, t));
+        int y = CONTENT_Y + 8;
+        for (Module m : NSClientClient.MODULES.getModules()) {
+            boolean hovered = isInside(mouseX, mouseY, PANEL_X + 6, y, PANEL_W - 12, NAV_ROW_H);
+            float hoverT = anim.animate("kb_hover_" + m.getName(), hovered ? 1f : 0f, 14f);
+            if (hoverT > 0.01f) {
+                UIRenderUtil.fillRounded(context, PANEL_X + 6, y, PANEL_X + PANEL_W - 6, y + NAV_ROW_H, ROW_RADIUS,
+                        withAlpha(UIRenderUtil.lerpArgb(0x00000000, COL_PANEL_ALT, hoverT), t));
+            }
+            context.drawTextWithShadow(this.textRenderer, m.getDisplayName(), PANEL_X + 14, y + 8, withAlpha(COL_TEXT, t));
+            String bindText = bindingModule == m ? "Press a key..." : keyName(m.getKeyCode());
+            int bw = this.textRenderer.getWidth(bindText);
+            context.drawTextWithShadow(this.textRenderer, bindText, PANEL_X + PANEL_W - 14 - bw, y + 8,
+                    withAlpha(bindingModule == m ? COL_ACCENT : COL_TEXT_DIM, t));
+            y += NAV_ROW_H + 2;
+        }
+    }
+
+    private String keyName(int keyCode) {
+        if (keyCode == -1) return "None";
+        String name = GLFW.glfwGetKeyName(keyCode, 0);
+        return name != null ? name.toUpperCase() : ("Key " + keyCode);
+    }
+
+    // ---------------------------------------------------------------- configs section
+
+    private void renderConfigsSection(DrawContext context, int mouseX, int mouseY, float t) {
+        if (profileCacheDirty) {
+            profileCache = ConfigManager.listProfiles();
+            profileCacheDirty = false;
+        }
+
+        UIRenderUtil.fillGlass(context, PANEL_X, CONTENT_Y, PANEL_X + PANEL_W, this.height - 10, CARD_RADIUS, withAlpha(COL_PANEL, t));
+        context.drawTextWithShadow(this.textRenderer, "Configs", PANEL_X + 14, CONTENT_Y + 10, withAlpha(COL_TEXT, t));
+
+        int fieldY = CONTENT_Y + 26;
+        int fieldW = PANEL_W - 14 - 60 - 14;
+        boolean fieldHovered = isInside(mouseX, mouseY, PANEL_X + 14, fieldY, fieldW, 16);
+        int border = configNameFocused ? COL_ACCENT : (fieldHovered ? COL_ACCENT_DIM : 0x00000000);
+        if (border != 0) UIRenderUtil.fillRounded(context, PANEL_X + 13, fieldY - 1, PANEL_X + 14 + fieldW + 1, fieldY + 17, 5, withAlpha(border, t));
+        UIRenderUtil.fillRounded(context, PANEL_X + 14, fieldY, PANEL_X + 14 + fieldW, fieldY + 16, 4, withAlpha(COL_PANEL_ALT, t));
+        String shownName = configNameBuffer.isEmpty() ? "Profile name..." : configNameBuffer;
+        context.drawTextWithShadow(this.textRenderer, shownName, PANEL_X + 20, fieldY + 4,
+                withAlpha(configNameBuffer.isEmpty() ? COL_TEXT_DIM : COL_TEXT, t));
+
+        int saveX = PANEL_X + 14 + fieldW + 8;
+        boolean saveHovered = isInside(mouseX, mouseY, saveX, fieldY, 52, 16);
+        UIRenderUtil.fillRounded(context, saveX, fieldY, saveX + 52, fieldY + 16, 5, withAlpha(saveHovered ? COL_ACCENT : COL_ACCENT_DIM, t));
+        context.drawTextWithShadow(this.textRenderer, "Save", saveX + 14, fieldY + 4, withAlpha(0xFFFFFFFF, t));
+
+        int y = fieldY + 26;
+        if (profileCache.isEmpty()) {
+            context.drawTextWithShadow(this.textRenderer, "No saved profiles yet.", PANEL_X + 14, y, withAlpha(COL_TEXT_DIM, t));
+            return;
+        }
+        for (String name : profileCache) {
+            boolean hovered = isInside(mouseX, mouseY, PANEL_X + 6, y, PANEL_W - 12, NAV_ROW_H);
+            float hoverT = anim.animate("profile_hover_" + name, hovered ? 1f : 0f, 14f);
+            if (hoverT > 0.01f) {
+                UIRenderUtil.fillRounded(context, PANEL_X + 6, y, PANEL_X + PANEL_W - 6, y + NAV_ROW_H, ROW_RADIUS,
+                        withAlpha(UIRenderUtil.lerpArgb(0x00000000, COL_PANEL_ALT, hoverT), t));
+            }
+            context.drawTextWithShadow(this.textRenderer, name, PANEL_X + 14, y + 8, withAlpha(COL_TEXT, t));
+            context.drawTextWithShadow(this.textRenderer, "Delete", PANEL_X + PANEL_W - 54, y + 8, withAlpha(0xFFFF6B6B, t));
+            context.drawTextWithShadow(this.textRenderer, "Load", PANEL_X + PANEL_W - 100, y + 8, withAlpha(COL_ACCENT, t));
+            y += NAV_ROW_H + 2;
+        }
+    }
+
+    // ---------------------------------------------------------------- shared widgets
+
+    private void drawToggle(DrawContext context, int x, int y, float progress, float globalAlpha) {
+        int cy = y + 7;
+        if (progress > 0.02f) {
+            UIRenderUtil.fillRounded(context, x, y, x + 28, y + 14, 7, withAlpha(UIRenderUtil.lerpArgb(0x00000000, COL_ACCENT, progress), globalAlpha));
+        }
+        int knobX = (int) UIRenderUtil.lerp(x + 7, x + 21, progress);
+        if (progress < 0.98f) drawKnob(context, knobX, cy, 5, withAlpha(COL_TEXT_DIM, (1 - progress) * globalAlpha), false);
+        if (progress > 0.02f) drawKnob(context, knobX, cy, 5, withAlpha(0xFFFFFFFF, progress * globalAlpha), true);
+    }
+
+    private void drawKnob(DrawContext context, int cx, int cy, int r, int argb, boolean filled) {
+        if (filled) {
+            for (int dy = -r; dy <= r; dy++) {
+                int dx = (int) Math.round(Math.sqrt(Math.max(0, r * r - dy * dy)));
+                context.fill(cx - dx, cy + dy, cx + dx, cy + dy + 1, argb);
+            }
+        } else {
+            int segments = 12;
+            for (int i = 0; i < segments; i++) {
+                double a = 2 * Math.PI * i / segments;
+                int x = cx + (int) (Math.cos(a) * r);
+                int y = cy + (int) (Math.sin(a) * r);
+                context.fill(x, y, x + 1, y + 1, argb);
+            }
+        }
+    }
+
+    private static int withAlpha(int argbOpaque, float alphaMul) {
+        int a = (argbOpaque >>> 24) & 0xFF;
+        int newA = Math.round(a * clamp01(alphaMul));
+        return (newA << 24) | (argbOpaque & 0xFFFFFF);
+    }
+
+    private void renderLivePreview(DrawContext context) {
+        for (Module m : NSClientClient.MODULES.getModules()) {
+            if (m instanceof HudModule hud && hud.isEnabled()) {
+                hud.renderHud(context, 1.0f);
+            }
+        }
+        NSClientClient.MODULES.getGroupManager().render(context, NSClientClient.MODULES);
+
+        if (draggingHud != null) {
+            int w = draggingHud.getPreviewWidth();
+            int h = draggingHud.getPreviewHeight();
+            int x = (int) draggingHud.getX();
+            int y = (int) draggingHud.getY();
+            UIRenderUtil.fillRounded(context, x - 2, y - 2, x + w + 2, y + h + 2, 4, 0x33B388FF);
+        }
+        if (draggingGroup != null) {
+            int x = (int) draggingGroup.getX();
+            int y = (int) draggingGroup.getY();
+            int w = (int) draggingGroup.getLastWidth();
+            int h = (int) draggingGroup.getLastHeight();
+            UIRenderUtil.fillRounded(context, x - 2, y - 2, x + w + 2, y + h + 2, 4, 0x33B388FF);
+        }
+    }
+
+    // ================================================================== input
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        searchFocused = false;
+        configNameFocused = false;
+
+        if (handleTopBarClick(mouseX, mouseY)) return true;
+        if (handleSidebarClick(mouseX, mouseY)) return true;
+
+        switch (section) {
+            case VISUALS, HUD, MISC -> { if (handleModulesClick(mouseX, mouseY)) return true; }
+            case THEMES -> { if (handleThemesClick(mouseX, mouseY)) return true; }
+            case HUD_EDIT -> { if (handleHudEditClick(mouseX, mouseY)) return true; }
+            case KEYBINDS -> { if (handleKeybindsClick(mouseX, mouseY)) return true; }
+            case CONFIGS -> { if (handleConfigsClick(mouseX, mouseY)) return true; }
+            default -> {}
+        }
+
+        if (handleHudDragStart(mouseX, mouseY, button)) return true;
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private boolean handleTopBarClick(double mouseX, double mouseY) {
+        int boxX = PANEL_X + PANEL_W - SEARCH_BOX_W;
+        if (isInside(mouseX, mouseY, boxX, TOP_BAR_Y, SEARCH_BOX_W, 18)) {
+            searchFocused = true;
+            return true;
+        }
+        return false;
+    }package com.nsclient.gui;
 
 import com.nsclient.NSClientClient;
 import com.nsclient.config.ConfigManager;
@@ -280,4 +607,305 @@ public class ClickGui extends Screen {
                     x + 22, y + 4, withAlpha(selected ? COL_TEXT : COL_TEXT_DIM, t));
         }
         return y + 16 + 10;
+                }
+    private boolean handleSidebarClick(double mouseX, double mouseY) {
+        if (mouseX < 10 || mouseX > 10 + SIDEBAR_W) return false;
+        int y = CONTENT_Y + 10;
+        for (NavItem item : NAV_MODULES) {
+            if (isInside(mouseX, mouseY, 10, y, SIDEBAR_W, NAV_ROW_H)) return selectSection(item.section());
+            y += NAV_ROW_H + 2;
+        }
+        y += 8 + 14;
+        for (NavItem item : NAV_GENERAL) {
+            if (isInside(mouseX, mouseY, 10, y, SIDEBAR_W, NAV_ROW_H)) return selectSection(item.section());
+            y += NAV_ROW_H + 2;
+        }
+        return false;
+    }
+
+    private boolean selectSection(Section newSection) {
+        section = newSection;
+        expanded = null;
+        bindingModule = null;
+        if (newSection != Section.HUD_EDIT) selectedGroup = null;
+        if (newSection == Section.CONFIGS) profileCacheDirty = true;
+        return true;
+    }
+
+    private boolean handleModulesClick(double mouseX, double mouseY) {
+        int y = CONTENT_Y + 8;
+        if (section == Section.VISUALS) {
+            int tabW = 90, gap = 8, startX = PANEL_X + 10;
+            Module.Area[] areas = { Module.Area.PLAYER, Module.Area.WORLD };
+            for (int i = 0; i < areas.length; i++) {
+                if (isInside(mouseX, mouseY, startX + i * (tabW + gap), y, tabW, 16)) {
+                    selectedArea = areas[i];
+                    expanded = null;
+                    return true;
+                }
+            }
+            y += 16 + 10;
+        }
+
+        for (Module m : getVisibleModules()) {
+            int toggleX = PANEL_X + PANEL_W - 40;
+            if (isInside(mouseX, mouseY, toggleX, y + 8, 28, 14)) {
+                m.toggle();
+                return true;
+            }
+            if (isInside(mouseX, mouseY, PANEL_X + 6, y, PANEL_W - 12, MODULE_ROW_H)) {
+                expanded = (expanded == m) ? null : m;
+                return true;
+            }
+            y += MODULE_ROW_H + 2;
+            if (expanded == m) {
+                for (Setting<?> setting : m.getSettings()) {
+                    if (setting instanceof SliderSetting slider) {
+                        int barY = y + 11;
+                        if (mouseY >= barY && mouseY <= barY + 4) {
+                            draggingSlider = slider;
+                            updateSlider(slider, mouseX);
+                            return true;
+                        }
+                        y += SETTING_SLIDER_H;
+                    } else if (setting instanceof BooleanSetting bool) {
+                        int toggleX2 = PANEL_X + PANEL_W - 40;
+                        if (isInside(mouseX, mouseY, toggleX2, y, 28, 12)) {
+                            bool.setValue(!bool.getValue());
+                            return true;
+                        }
+                        y += SETTING_BOOL_H;
+                    } else {
+                        y += SETTING_COLOR_H;
+                    }
+                }
+                String modeLabel = modeRowLabel(m);
+                if (modeLabel != null) {
+                    if (isInside(mouseX, mouseY, PANEL_X + 6, y, PANEL_W - 12, SETTING_BOOL_H)) {
+                        cycleMode(m);
+                        return true;
+                    }
+                    y += SETTING_BOOL_H;
+                }
+                y += 6;
+            }
+        }
+        return false;
+    }
+
+    private boolean handleThemesClick(double mouseX, double mouseY) {
+        int size = 22, gap = 8, startX = PANEL_X + 14, rowY = CONTENT_Y + 38;
+        for (int i = 0; i < THEME_SWATCHES.length; i++) {
+            int x = startX + i * (size + gap);
+            if (isInside(mouseX, mouseY, x, rowY, size, size)) {
+                applyTheme(THEME_SWATCHES[i] | 0xFF000000);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean handleKeybindsClick(double mouseX, double mouseY) {
+        int y = CONTENT_Y + 8;
+        for (Module m : NSClientClient.MODULES.getModules()) {
+            if (isInside(mouseX, mouseY, PANEL_X + 6, y, PANEL_W - 12, NAV_ROW_H)) {
+                bindingModule = m;
+                return true;
+            }
+            y += NAV_ROW_H + 2;
+        }
+        return false;
+    }
+
+    private boolean handleConfigsClick(double mouseX, double mouseY) {
+        int fieldY = CONTENT_Y + 26;
+        int fieldW = PANEL_W - 14 - 60 - 14;
+        if (isInside(mouseX, mouseY, PANEL_X + 14, fieldY, fieldW, 16)) {
+            configNameFocused = true;
+            return true;
+        }
+        int saveX = PANEL_X + 14 + fieldW + 8;
+        if (isInside(mouseX, mouseY, saveX, fieldY, 52, 16)) {
+            String trimmed = configNameBuffer.trim();
+            if (!trimmed.isEmpty()) {
+                ConfigManager.saveProfile(NSClientClient.MODULES, trimmed);
+                configNameBuffer = "";
+                profileCacheDirty = true;
+            }
+            return true;
+        }
+
+        int y = fieldY + 26;
+        for (String name : profileCache) {
+            if (isInside(mouseX, mouseY, PANEL_X + PANEL_W - 100, y, 40, NAV_ROW_H)) {
+                ConfigManager.loadProfile(NSClientClient.MODULES, name);
+                return true;
+            }
+            if (isInside(mouseX, mouseY, PANEL_X + PANEL_W - 54, y, 40, NAV_ROW_H)) {
+                ConfigManager.deleteProfile(name);
+                profileCacheDirty = true;
+                return true;
+            }
+            y += NAV_ROW_H + 2;
+        }
+        return false;
+    }
+
+    private boolean handleHudDragStart(double mouseX, double mouseY, int button) {
+        if (mouseX <= PANEL_X + PANEL_W + 10) return false;
+        HudGroupManager gm = NSClientClient.MODULES.getGroupManager();
+
+        if (button == 1) {
+            for (HudGroup g : gm.getGroups()) {
+                for (HudGroup.MemberBounds b : g.getLastBounds()) {
+                    if (mouseX >= b.x1() && mouseX <= b.x2() && mouseY >= b.y1() && mouseY <= b.y2()) {
+                        gm.splitOut(NSClientClient.MODULES, b.moduleName());
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        for (HudGroup g : gm.getGroups()) {
+            if (g.containsPoint(mouseX, mouseY)) {
+                draggingGroup = g;
+                selectedGroup = g;
+                groupDragOffsetX = mouseX - g.getX();
+                groupDragOffsetY = mouseY - g.getY();
+                return true;
+            }
+        }
+
+        for (Module mod : NSClientClient.MODULES.getModules()) {
+            if (mod instanceof HudModule hud && hud.isEnabled() && !hud.isGrouped()
+                    && isInside(mouseX, mouseY, hud.getX(), hud.getY(), hud.getPreviewWidth(), hud.getPreviewHeight())) {
+                draggingHud = hud;
+                dragOffsetX = mouseX - hud.getX();
+                dragOffsetY = mouseY - hud.getY();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void tryMergeOnRelease(HudModule dragged) {
+        if (!(dragged instanceof TextStat)) return;
+        HudGroupManager gm = NSClientClient.MODULES.getGroupManager();
+        double dcx = dragged.getX() + dragged.getPreviewWidth() / 2.0;
+        double dcy = dragged.getY() + dragged.getPreviewHeight() / 2.0;
+
+        for (HudGroup g : gm.getGroups()) {
+            if (g.containsPoint(dcx, dcy) && !g.getMembers().contains(dragged.getName())) {
+                gm.merge(NSClientClient.MODULES, dragged.getName(), g.getMembers().get(0));
+                return;
+            }
+        }
+        for (Module mod : NSClientClient.MODULES.getModules()) {
+            if (!(mod instanceof HudModule other) || mod == dragged || !(other instanceof TextStat)) continue;
+            if (!other.isEnabled() || other.isGrouped()) continue;
+            boolean hit = dcx >= other.getX() && dcx <= other.getX() + other.getPreviewWidth()
+                    && dcy >= other.getY() && dcy <= other.getY() + other.getPreviewHeight();
+            if (hit) {
+                gm.merge(NSClientClient.MODULES, dragged.getName(), other.getName());
+                return;
+            }
+        }
+    }
+
+    private void updateSlider(SliderSetting slider, double mouseX) {
+        int barX = PANEL_X + 14;
+        int barW = PANEL_W - 40;
+        double pct = clamp01((mouseX - barX) / (double) barW);
+        double raw = slider.getMin() + pct * (slider.getMax() - slider.getMin());
+        double stepped = Math.round(raw / slider.getStep()) * slider.getStep();
+        slider.setValue(Math.max(slider.getMin(), Math.min(slider.getMax(), stepped)));
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (draggingSlider != null) {
+            updateSlider(draggingSlider, mouseX);
+            return true;
+        }
+        if (draggingHud != null) {
+            draggingHud.setX(mouseX - dragOffsetX);
+            draggingHud.setY(mouseY - dragOffsetY);
+            return true;
+        }
+        if (draggingGroup != null) {
+            draggingGroup.setX(mouseX - groupDragOffsetX);
+            draggingGroup.setY(mouseY - groupDragOffsetY);
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (draggingHud != null) tryMergeOnRelease(draggingHud);
+        draggingSlider = null;
+        draggingHud = null;
+        draggingGroup = null;
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (mouseX > PANEL_X + PANEL_W + 10) {
+            double delta = verticalAmount > 0 ? 0.05 : -0.05;
+            for (HudGroup g : NSClientClient.MODULES.getGroupManager().getGroups()) {
+                if (g.containsPoint(mouseX, mouseY)) {
+                    g.setScale(g.getScale() + delta);
+                    return true;
+                }
+            }
+            for (Module mod : NSClientClient.MODULES.getModules()) {
+                if (mod instanceof HudModule hud && hud.isEnabled() && !hud.isGrouped()
+                        && isInside(mouseX, mouseY, hud.getX(), hud.getY(), hud.getPreviewWidth(), hud.getPreviewHeight())) {
+                    hud.setScale(hud.getScale() + delta);
+                    return true;
+                }
+            }
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean charTyped(char chr, int modifiers) {
+        if (bindingModule != null) return super.charTyped(chr, modifiers);
+        if (searchFocused) { search += chr; return true; }
+        if (configNameFocused) { configNameBuffer += chr; return true; }
+        return super.charTyped(chr, modifiers);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (bindingModule != null) {
+            bindingModule.setKeyCode(keyCode == GLFW.GLFW_KEY_ESCAPE ? -1 : keyCode);
+            bindingModule = null;
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            if (searchFocused && !search.isEmpty()) { search = search.substring(0, search.length() - 1); return true; }
+            if (configNameFocused && !configNameBuffer.isEmpty()) { configNameBuffer = configNameBuffer.substring(0, configNameBuffer.length() - 1); return true; }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private static boolean isInside(double px, double py, double x, double y, double w, double h) {
+        return px >= x && px <= x + w && py >= y && py <= y + h;
+    }
+
+    private static double clamp01(double v) { return Math.max(0, Math.min(1, v)); }
+    private static float clamp01(float v) { return Math.max(0f, Math.min(1f, v)); }
+
+    @Override
+    public boolean shouldPause() { return false; }
+
+    @Override
+    public void close() {
+        ConfigManager.save(NSClientClient.MODULES);
+        super.close();
+    }
                 }
